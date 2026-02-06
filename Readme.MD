@@ -299,7 +299,7 @@ The workload was distributed across the available doctors as follows:
 
 ---
 ### OPD Day Simulation Output
-![Simulation Output](images/Screenshot 2026-02-06 142051.png)
+![Simulation Output](images/simulation.png)
 
 ## Technical Observations
 - **Waitlist Logic**: 33% of patients were placed on the waitlist due to capacity limits.
