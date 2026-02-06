@@ -37,7 +37,7 @@ public interface SlotRepository extends JpaRepository<Slot, UUID> {
         // Find any available slots for emergency patients (ignore doctor)
         @Query("""
                           SELECT s FROM Slot s
-                                   WHERE s.currentCapacity < s.maxCapacity
+                                  WHERE s.currentCapacity < (s.maxCapacity + s.elasticCapacity)
                                    AND s.endTime >= :currentTime
                         """)
         List<Slot> findAvailableSlotsByCurrentTime(@Param("currentTime") LocalDateTime currentTime);

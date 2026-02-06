@@ -31,7 +31,8 @@ public class TokenAllocationImpl implements TokenAllocationServices {
     private final SlotServices slotServices;
     private final TokenMapper tokenMapper;
 
-    private final ConcurrentHashMap<UUID, PriorityBlockingQueue<CreateTokenRequest>> slotWaitlists = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, PriorityBlockingQueue<CreateTokenRequest>> slotWaitlists
+            = new ConcurrentHashMap<>();
 
     @Override
     public TokenResponse allocateToken(CreateTokenRequest createTokenRequest) {
@@ -53,10 +54,16 @@ public class TokenAllocationImpl implements TokenAllocationServices {
                     .filter(s -> s.canBook(createTokenRequest.getTokenType()))
                     .findFirst().orElse(null);
         }
+        // slot full -> waitlist
         if (slot == null || !slot.canBook(createTokenRequest.getTokenType())) {
             addToWaitlist(createTokenRequest,
-                    createTokenRequest.getDoctorId() != null ? createTokenRequest.getDoctorId() : UUID.randomUUID());
-            return null;
+                   slot != null ? slot.getId() : createTokenRequest.getDoctorId());
+            return TokenResponse.builder()
+                    .patientName(createTokenRequest.getPatientName())
+                    .tokenType(createTokenRequest.getTokenType())
+                    .tokenStatus(TokenStatus.WAITLISTED)
+                    .score(createTokenRequest.getTokenType().getScore())
+                    .build();
 
         }
         return saveTokenToSlot(slot, createTokenRequest);
@@ -103,7 +110,7 @@ public class TokenAllocationImpl implements TokenAllocationServices {
         Token token = tokenRepository.findById(tokenId)
                 .orElseThrow(() -> new RuntimeException("Token not found"));
 
-        token.setTokenStatus(TokenStatus.PENDING);
+        token.setTokenStatus(TokenStatus.NO_SHOW);
         tokenRepository.save(token);
 
         Slot slot = token.getTimeSlot();
@@ -117,47 +124,37 @@ public class TokenAllocationImpl implements TokenAllocationServices {
     }
 
     // helper method
-    private void addToWaitlist(CreateTokenRequest createTokenRequest, UUID doctorId) {
+    private void addToWaitlist(CreateTokenRequest createTokenRequest, UUID slotId) {
         // use DoctorId as key for waiting queue
-        slotWaitlists.computeIfAbsent(doctorId, k -> new PriorityBlockingQueue<>(
+        slotWaitlists.computeIfAbsent(slotId,
+                        k -> new PriorityBlockingQueue<>(
                 20,
                 (t1, t2) -> Integer.compare(t2.getTokenType().getScore(), t1.getTokenType().getScore())))
                 .offer(createTokenRequest);
     }
 
     private void allocateFromWaitlist(Slot slot) {
-        PriorityBlockingQueue<CreateTokenRequest> queue = slotWaitlists.getOrDefault(slot.getDoctor().getId(),
-                new PriorityBlockingQueue<>());
 
-        // Loop while we can book (using our new elastic check)
-        // Note: Use a default type like ONLINE_BOOKING to check standard capacity
-        while (slot.canBook(TokenType.ONLINE_BOOKING) && !queue.isEmpty()) {
+        PriorityBlockingQueue<CreateTokenRequest> queue = slotWaitlists.get(slot.getId());
+        if (queue == null) return;
 
-            // 1. PEEK at the request (don't remove yet)
-            CreateTokenRequest request = queue.peek();
-
-            // 2. Double check if this SPECIFIC request type can be booked
-            if (request != null && slot.canBook(request.getTokenType())) {
-                try {
-                    // 3. Try to save
-                    TokenResponse response = saveTokenToSlot(slot, request);
-
-                    // 4. If successful, ONLY THEN remove from queue
-                    if (response != null) {
-                        queue.poll();
-                    }
-                } catch (Exception e) {
-                    System.err.println("Allocation failed: " + e.getMessage());
-                    break; // Stop loop on error to prevent data loss
-                }
-            } else {
-                break; // Standard capacity is full
+        while (!queue.isEmpty() && slot.canBook(queue.peek().getTokenType())) {
+            CreateTokenRequest request = queue.poll();
+            if (request != null) {
+                saveTokenToSlot(slot, request);
             }
         }
     }
 
     private TokenResponse saveTokenToSlot(Slot slot, CreateTokenRequest createTokenRequest) {
-        slot.incrementCapacity();
+
+        // elastic capacity for emergency
+        if(createTokenRequest.getTokenType() == TokenType.EMERGENCY) {
+            slot.setElasticCapacity(slot.getElasticCapacity() + 1);
+        }
+
+
+        slot.incrementCapacity(createTokenRequest.getTokenType());
         slotRepository.save(slot);
 
         Token build = Token.builder()

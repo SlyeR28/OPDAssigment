@@ -43,6 +43,9 @@ public class Slot {
     @Builder.Default
     private List<Token> tokens = new ArrayList<>();
 
+    @Column(name = "elastic_capacity", nullable = false)
+    private int elasticCapacity = 0;
+
     @Version
     private Long version;
 
@@ -50,17 +53,17 @@ public class Slot {
         return currentCapacity >= maxCapacity;
     }
 
-    public void incrementCapacity() {
-        if (isFull()) {
-            throw new IllegalStateException("Slot is already full");
+    public void incrementCapacity(TokenType type) {
+        if (!canBook(type)) {
+            throw new IllegalStateException("Slot capacity exceeded");
         }
         this.currentCapacity++;
     }
 
     public boolean canBook(TokenType type) {
         if (type == TokenType.EMERGENCY) {
-            return true;
+            return currentCapacity < (maxCapacity + elasticCapacity);
         }
-        return !isFull();
+        return currentCapacity < maxCapacity;
     }
 }

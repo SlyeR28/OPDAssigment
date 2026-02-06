@@ -18,4 +18,6 @@ public interface SlotServices {
     void closeSlot(UUID slotId);
 
     SlotResponse findBestEmergencySlot(LocalDateTime currentTime);
+
+
 }

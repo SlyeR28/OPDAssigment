@@ -2,9 +2,9 @@ package org.backendintern.Models.Enums;
 
 public enum TokenStatus {
     ACTIVE,
-    PENDING,
-    BOOKED,
-    COMPLETED,
+    NO_SHOW,
     WAITLISTED,
     CANCELLED,
+    COMPLETED
+
 }
